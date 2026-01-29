@@ -181,7 +181,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Generate random style server-side (prevent client manipulation)
-    const colors = ['bg-yellow-200', 'bg-pink-200', 'bg-blue-200', 'bg-green-200', 'bg-purple-200', 'bg-red-200']
+    const colors = ['bg-yellow-200', 'bg-pink-200', 'bg-blue-200', 'bg-green-200', 'bg-purple-200', 'bg-red-200', 'bg-orange-200']
     const randomColor = colors[Math.floor(Math.random() * colors.length)]
     const randomRotation = Math.floor(Math.random() * 5) - 2 // -2 to +2 degrees
     const messageStyle = JSON.stringify({ color: randomColor, rotation: randomRotation })

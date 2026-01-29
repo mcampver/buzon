@@ -19,6 +19,16 @@ const config: Config = {
       },
     },
   },
+  safelist: [
+    // Message card colors (dynamically applied from server)
+    'bg-yellow-200',
+    'bg-pink-200',
+    'bg-blue-200',
+    'bg-green-200',
+    'bg-purple-200',
+    'bg-red-200',
+    'bg-orange-200'
+  ],
   plugins: [],
 };
 export default config;
