@@ -15,7 +15,7 @@ export async function GET() {
     return NextResponse.json({ 
       status: 'error', 
       db: 'disconnected', 
-      details: error.message 
+      details: (error as any).message 
     }, { status: 500 })
   }
 }
