@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
   const type = searchParams.get('type') // 'public' | 'inbox'
 
   try {
-    if (type === 'public') {
+    if (type === 'public' || type === 'wall') {
       const messages = await db.message.findMany({
         where: { isPublic: true },
         orderBy: { createdAt: 'desc' },
@@ -20,6 +20,11 @@ export async function GET(request: NextRequest) {
     } 
     
     if (type === 'inbox') {
+      // Check if revealed
+      const config = await db.systemConfig.findUnique({ where: { id: 'default' } })
+      const areRevealed = config?.areMessagesRevealed ?? false
+      const isAdmin = session.user.isAdmin
+
       const messages = await db.message.findMany({
         where: { 
           OR: [
@@ -29,6 +34,15 @@ export async function GET(request: NextRequest) {
         },
         orderBy: { createdAt: 'desc' }
       })
+
+      // Redact if not revealed and not admin
+      if (!areRevealed && !isAdmin) {
+        return NextResponse.json(messages.map(m => ({
+          ...m,
+          content: '🔒 Mensaje secreto' // Redacted content
+        })))
+      }
+
       return NextResponse.json(messages)
     }
 

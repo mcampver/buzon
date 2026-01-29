@@ -6,28 +6,38 @@ import bcrypt from 'bcryptjs'
 
 export async function POST(request: NextRequest) {
   const body = await request.json()
-  const { username, password } = body
+  const { username, password, action, department } = body // action: 'login' | 'register'
 
   if (!username || !password) {
     return NextResponse.json({ error: 'Faltan datos' }, { status: 400 })
   }
 
   try {
-    // 1. Check if user exists
     let user = await db.user.findUnique({
       where: { username }
     })
 
-    if (!user) {
-      // Create new user (Ad-hoc registration as discussed)
+    if (action === 'register') {
+      if (user) {
+        return NextResponse.json({ error: 'El usuario ya existe' }, { status: 400 })
+      }
+      if (!department) {
+        return NextResponse.json({ error: 'Selecciona una área' }, { status: 400 })
+      }
+
       const hashedPassword = await bcrypt.hash(password, 10)
       user = await db.user.create({
         data: {
           username,
           password: hashedPassword,
+          department
         }
       })
     } else {
+      // Login
+      if (!user) {
+         return NextResponse.json({ error: 'Usuario no encontrado' }, { status: 401 })
+      }
       // Verify password
       const isValid = await bcrypt.compare(password, user.password)
       if (!isValid) {
@@ -37,7 +47,7 @@ export async function POST(request: NextRequest) {
 
     // 2. Create Session
     const expires = new Date(Date.now() + 24 * 60 * 60 * 1000)
-    const session = await encrypt({ user: { id: user.id, username: user.username, isAdmin: user.isAdmin }, expires })
+    const session = await encrypt({ user: { id: user.id, username: user.username, isAdmin: user.isAdmin, department: user.department }, expires })
 
     // 3. Set Cookie
     const cookieStore = await cookies()

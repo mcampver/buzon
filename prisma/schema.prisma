@@ -3,14 +3,16 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = "file:./dev.db"
+  provider = "postgresql"
+  url = env("POSTGRES_PRISMA_URL") // uses connection pooling
+  directUrl = env("POSTGRES_URL_NON_POOLING") // uses a direct connection
 }
 
 model User {
   id        String   @id @default(cuid())
   username  String   @unique
   password  String   // Hashed
+  department String? // FrontEnd, BackEnd, Design, Support
   isAdmin   Boolean  @default(false)
   createdAt DateTime @default(now())
   
@@ -36,4 +38,9 @@ model Message {
   style     String?  // JSON string for color, rotation, sticker type
   
   createdAt DateTime @default(now())
+}
+
+model SystemConfig {
+  id                  String  @id @default("default")
+  areMessagesRevealed Boolean @default(false)
 }
