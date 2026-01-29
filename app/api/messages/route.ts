@@ -65,7 +65,10 @@ export async function GET(request: NextRequest) {
       }
       const messages = await db.message.findMany({
         orderBy: { createdAt: 'desc' },
-        include: { toUser: true }
+        include: { 
+          toUser: true,
+          fromUser: true // Include sender for admin
+        }
       })
       return NextResponse.json(messages)
     }

@@ -10,10 +10,15 @@ interface Message {
   content: string
   toName: string | null
   fromId: string | null
+  // fromUser might be nested if we didn't flatten it, but let's assume API verification.
+  // actually the API returns the object with included relations.
+  fromUser?: { username: string }
   style: string | null
   isPublic: boolean
   createdAt: string
 }
+
+
 
 interface User {
   id: string
@@ -25,6 +30,7 @@ export default function DashboardPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [loading, setLoading] = useState(true)
   const [isComposeOpen, setIsComposeOpen] = useState(false)
+  const [selectedMessage, setSelectedMessage] = useState<Message | null>(null)
   const [areMessagesRevealed, setAreMessagesRevealed] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
   
@@ -170,7 +176,8 @@ export default function DashboardPage() {
               {messages.map((msg) => (
                 <div 
                   key={msg.id}
-                  className={`aspect-square p-4 shadow-md rounded-sm flex flex-col items-center justify-center text-center transition-transform hover:scale-105 relative group ${msg.style ? JSON.parse(msg.style).color : 'bg-yellow-200'}`}
+                  onClick={() => setSelectedMessage(msg)}
+                  className={`aspect-square p-4 shadow-md rounded-sm flex flex-col items-center justify-center text-center transition-transform hover:scale-105 relative group cursor-pointer ${msg.style ? JSON.parse(msg.style).color : 'bg-yellow-200'}`}
                   style={{ transform: msg.style ? `rotate(${JSON.parse(msg.style).rotation}deg)` : 'rotate(0deg)' }}
                 >
                   {isAdmin && (
@@ -253,6 +260,7 @@ export default function DashboardPage() {
                    <thead className="bg-gray-50 text-gray-700 font-medium">
                      <tr>
                        <th className="p-3">Mensaje</th>
+                       <th className="p-3">De</th>
                        <th className="p-3">Para</th>
                        <th className="p-3">Tipo</th>
                        <th className="p-3 text-right">Fecha</th>
@@ -263,6 +271,7 @@ export default function DashboardPage() {
                      {messages.map(msg => (
                        <tr key={msg.id} className="hover:bg-gray-50">
                          <td className="p-3 max-w-[200px] truncate" title={msg.content}>{msg.content}</td>
+                         <td className="p-3 font-medium text-gray-900">{msg.fromUser?.username || 'Anónimo'}</td>
                          <td className="p-3">{msg.toName || (msg.isPublic ? 'Todos (Muro)' : 'Privado')}</td>
                          <td className="p-3">
                            <span className={`px-2 py-0.5 rounded-full text-xs ${msg.isPublic ? 'bg-pink-100 text-pink-700' : 'bg-purple-100 text-purple-700'}`}>
@@ -301,6 +310,14 @@ export default function DashboardPage() {
       >
         <Plus size={24} />
       </button>
+
+          {/* View Modal */}
+          {selectedMessage && (
+            <ViewMessageModal 
+              message={selectedMessage} 
+              onClose={() => setSelectedMessage(null)} 
+            />
+          )}
 
       {/* Compose Modal */}
       <AnimatePresence>
@@ -441,6 +458,39 @@ function ComposeModal({ onClose, onSent }: { onClose: () => void, onSent: () => 
             {loading ? 'Enviando...' : 'Pegar Nota'}
           </button>
         </form>
+      </motion.div>
+    </div>
+  )
+}
+
+function ViewMessageModal({ message, onClose }: { message: Message, onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm" onClick={onClose}>
+      <motion.div 
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.9, opacity: 0 }}
+        className={`rounded-xl w-full max-w-lg shadow-2xl p-8 relative overflow-hidden flex flex-col justify-center min-h-[300px] items-center text-center ${message.style ? JSON.parse(message.style).color : 'bg-white'}`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button onClick={onClose} className="absolute top-4 right-4 bg-black/10 hover:bg-black/20 p-2 rounded-full transition-colors">
+          <X size={24} className="text-gray-800" />
+        </button>
+        
+        <p className="font-handwriting text-3xl leading-snug text-gray-900 mb-6 w-full break-words whitespace-pre-wrap">
+          {message.content}
+        </p>
+        
+        <div className="mt-auto pt-6 border-t border-black/10 w-full flex justify-between items-end text-sm text-gray-800 font-medium opacity-80">
+          <div className="text-left">
+            <span className="block text-xs uppercase tracking-wider opacity-60">Para</span>
+            {message.toName || 'Todos (Muro)'}
+          </div>
+          <div className="text-right">
+             <span className="block text-xs uppercase tracking-wider opacity-60">Enviado</span>
+             {new Date(message.createdAt).toLocaleDateString()}
+          </div>
+        </div>
       </motion.div>
     </div>
   )

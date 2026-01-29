@@ -18,6 +18,7 @@ model User {
   
   // Relations
   receivedMessages Message[] @relation("ReceivedMessages")
+  sentMessages     Message[] @relation("SentMessages")
 }
 
 model Message {
@@ -26,6 +27,7 @@ model Message {
   
   // Sender info (optional if anonymous)
   fromId    String?
+  fromUser  User?    @relation("SentMessages", fields: [fromId], references: [id])
   
   // Recipient info
   toId      String?  // If registered user
