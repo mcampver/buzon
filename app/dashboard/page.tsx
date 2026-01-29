@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Plus, LogOut, Send, X, Users, Lock, ChevronDown, Eye, EyeOff } from 'lucide-react'
+import { Plus, LogOut, Send, X, Users, Lock, ChevronDown, Eye, EyeOff, Trash2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
 interface Message {
@@ -75,6 +75,19 @@ export default function DashboardPage() {
     }
   }
 
+  // Delete Message (Admin Only)
+  const deleteMessage = async (id: string) => {
+    if (!confirm('¿Seguro que quieres borrar este mensaje?')) return
+    try {
+      const res = await fetch(`/api/messages?id=${id}`, { method: 'DELETE' })
+      if (res.ok) {
+        fetchMessages() // Refresh list
+      }
+    } catch (error) {
+      console.error(error)
+    }
+  }
+
   useEffect(() => {
     fetchConfig()
     fetchMessages()
@@ -109,6 +122,14 @@ export default function DashboardPage() {
           >
             <Lock size={16} /> Buzón
           </button>
+          {isAdmin && (
+            <button 
+              onClick={() => setActiveTab('admin' as any)}
+              className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'admin' as any ? 'bg-white shadow-sm text-pink-600' : 'text-gray-500'}`}
+            >
+              <Eye size={16} /> Admin
+            </button>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -149,10 +170,19 @@ export default function DashboardPage() {
               {messages.map((msg) => (
                 <div 
                   key={msg.id}
-                  className={`aspect-square p-4 shadow-md rounded-sm flex flex-col items-center justify-center text-center transition-transform hover:scale-105 ${msg.style ? JSON.parse(msg.style).color : 'bg-yellow-200'}`}
+                  className={`aspect-square p-4 shadow-md rounded-sm flex flex-col items-center justify-center text-center transition-transform hover:scale-105 relative group ${msg.style ? JSON.parse(msg.style).color : 'bg-yellow-200'}`}
                   style={{ transform: msg.style ? `rotate(${JSON.parse(msg.style).rotation}deg)` : 'rotate(0deg)' }}
                 >
-                  <p className="font-handwriting text-lg leading-tight mb-2 text-gray-900">{msg.content}</p>
+                  {isAdmin && (
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); deleteMessage(msg.id); }}
+                      className="absolute top-2 right-2 p-1.5 bg-white/50 hover:bg-red-500 hover:text-white rounded-full text-gray-500 opacity-0 group-hover:opacity-100 transition-all custom-delete-btn"
+                      title="Borrar mensaje"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                  <p className="font-handwriting text-lg leading-tight mb-2 text-gray-900 line-clamp-6 overflow-hidden text-ellipsis">{msg.content}</p>
                   <div className="mt-auto text-xs opacity-70 text-gray-800">
                     Para: {msg.toName || 'Todos'}
                   </div>
@@ -164,7 +194,7 @@ export default function DashboardPage() {
                 </div>
               )}
             </motion.div>
-          ) : (
+          ) : activeTab === 'inbox' ? (
              <motion.div 
               key="inbox"
               initial={{ opacity: 0, x: 20 }}
@@ -208,6 +238,57 @@ export default function DashboardPage() {
                   No tienes mensajes secretos... todavía. 🤫
                 </div>
               )}
+            </motion.div>
+          ) : (
+            <motion.div 
+              key="admin"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="max-w-4xl mx-auto space-y-4"
+            >
+               <h2 className="text-xl font-semibold text-gray-700 mb-4 font-handwriting">Panel Global de Mensajes (Admin)</h2>
+               <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                 <table className="w-full text-sm text-left">
+                   <thead className="bg-gray-50 text-gray-700 font-medium">
+                     <tr>
+                       <th className="p-3">Mensaje</th>
+                       <th className="p-3">Para</th>
+                       <th className="p-3">Tipo</th>
+                       <th className="p-3 text-right">Fecha</th>
+                       <th className="p-3 text-right">Acción</th>
+                     </tr>
+                   </thead>
+                   <tbody className="divide-y divide-gray-100">
+                     {messages.map(msg => (
+                       <tr key={msg.id} className="hover:bg-gray-50">
+                         <td className="p-3 max-w-[200px] truncate" title={msg.content}>{msg.content}</td>
+                         <td className="p-3">{msg.toName || (msg.isPublic ? 'Todos (Muro)' : 'Privado')}</td>
+                         <td className="p-3">
+                           <span className={`px-2 py-0.5 rounded-full text-xs ${msg.isPublic ? 'bg-pink-100 text-pink-700' : 'bg-purple-100 text-purple-700'}`}>
+                             {msg.isPublic ? 'Muro' : 'Buzón'}
+                           </span>
+                         </td>
+                         <td className="p-3 text-right text-gray-500 text-xs">
+                           {new Date(msg.createdAt).toLocaleDateString()} {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                         </td>
+                         <td className="p-3 text-right">
+                            <button 
+                              onClick={() => deleteMessage(msg.id)}
+                              className="text-gray-400 hover:text-red-600 transition-colors p-1"
+                              title="Eliminar mensaje"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                         </td>
+                       </tr>
+                     ))}
+                   </tbody>
+                 </table>
+                 {messages.length === 0 && (
+                   <div className="p-8 text-center text-gray-400">No hay mensajes en la base de datos.</div>
+                 )}
+               </div>
             </motion.div>
           )}
         </AnimatePresence>

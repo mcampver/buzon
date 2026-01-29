@@ -14,7 +14,15 @@ export async function GET(request: NextRequest) {
       const messages = await db.message.findMany({
         where: { isPublic: true },
         orderBy: { createdAt: 'desc' },
-        include: { toUser: true } // to show who it was for if applicable
+        select: {
+          id: true,
+          content: true,
+          toName: true,
+          style: true,
+          createdAt: true,
+          isPublic: true
+          // Exclude fromId, toId, toUser
+        }
       })
       return NextResponse.json(messages)
     } 
@@ -32,17 +40,33 @@ export async function GET(request: NextRequest) {
             { toName: session.user.username } // Match by name as fallback
           ]
         },
-        orderBy: { createdAt: 'desc' }
+        orderBy: { createdAt: 'desc' },
+        // Select only necessary fields + fromId if needed for internal logic (but we'll strip it before sending)
       })
 
-      // Redact if not revealed and not admin
-      if (!areRevealed && !isAdmin) {
-        return NextResponse.json(messages.map(m => ({
-          ...m,
-          content: '🔒 Mensaje secreto' // Redacted content
-        })))
-      }
+      return NextResponse.json(messages.map(m => {
+        // Redaction Logic
+        const isRedacted = !areRevealed && !isAdmin
+        return {
+          id: m.id,
+          content: isRedacted ? '🔒 Mensaje secreto' : m.content,
+          toName: m.toName,
+          style: m.style,
+          createdAt: m.createdAt,
+          isPublic: m.isPublic,
+          fromId: null // Always hide sender in inbox too, anonymity is key!
+        }
+      }))
+    }
 
+    if (type === 'admin') {
+      if (!session.user.isAdmin) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+      const messages = await db.message.findMany({
+        orderBy: { createdAt: 'desc' },
+        include: { toUser: true }
+      })
       return NextResponse.json(messages)
     }
 
@@ -84,5 +108,24 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(message)
   } catch (error) {
     return NextResponse.json({ error: 'Error sending message' }, { status: 500 })
+  }
+export async function DELETE(request: NextRequest) {
+  const session = await getSession()
+  if (!session || !session.user.isAdmin) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  }
+
+  const { searchParams } = new URL(request.url)
+  const id = searchParams.get('id')
+
+  if (!id) {
+    return NextResponse.json({ error: 'Missing ID' }, { status: 400 })
+  }
+
+  try {
+    await db.message.delete({ where: { id } })
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    return NextResponse.json({ error: 'Error deleting message' }, { status: 500 })
   }
 }
