@@ -123,7 +123,11 @@ export default function DashboardPage() {
           )}
 
           <button 
-            onClick={() => router.push('/login')}
+            onClick={async () => {
+              await fetch('/api/auth/logout', { method: 'POST' })
+              router.push('/login')
+              router.refresh()
+            }}
             className="p-2 text-gray-500 hover:text-red-500 transition-colors"
           >
             <LogOut size={20} />
