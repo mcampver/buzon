@@ -1,11 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getSession } from '@/lib/auth'
+import { createRateLimiter, getClientIp } from '@/lib/rate-limit'
+
+// Rate limiter: 30 reactions per minute per IP
+const reactionRateLimiter = createRateLimiter(30, 60 * 1000)
 
 // POST - Toggle reaction (add if doesn't exist, remove if exists)
 export async function POST(request: NextRequest) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  // Rate limiting check
+  const clientIp = getClientIp(request)
+  if (!reactionRateLimiter.check(clientIp)) {
+    return NextResponse.json({ 
+      error: 'Demasiadas reacciones. Espera un momento.' 
+    }, { status: 429 })
+  }
 
   try {
     const { messageId, emoji } = await request.json()

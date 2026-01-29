@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getSession } from '@/lib/auth'
+import { createRateLimiter, getClientIp, sanitizeContent } from '@/lib/rate-limit'
+
+// Rate limiter: 10 messages per minute per IP
+const messageRateLimiter = createRateLimiter(20, 60 * 1000)
 
 export async function GET(request: NextRequest) {
   const session = await getSession()
@@ -128,13 +132,31 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   const session = await getSession()
-  // Allow anonymous? maybe not for spam, let's require login
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  // Rate limiting check
+  const clientIp = getClientIp(request)
+  if (!messageRateLimiter.check(clientIp)) {
+    return NextResponse.json({ 
+      error: 'Demasiados mensajes. Espera un momento.' 
+    }, { status: 429 })
+  }
+
   const body = await request.json()
-  const { content, toName, isPublic, style } = body
+  let { content, toName, isPublic, style } = body
 
   if (!content) return NextResponse.json({ error: 'Ah, vacío no vale!' }, { status: 400 })
+
+  // Sanitize and validate content
+  content = sanitizeContent(content)
+  
+  if (content.length === 0) {
+    return NextResponse.json({ error: 'Contenido inválido' }, { status: 400 })
+  }
+
+  if (content.length > 500) {
+    return NextResponse.json({ error: 'Mensaje muy largo (max 500 caracteres)' }, { status: 400 })
+  }
 
   // Security validation: public messages cannot have a specific recipient
   if (isPublic && toName) {
