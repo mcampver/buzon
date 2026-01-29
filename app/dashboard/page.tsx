@@ -221,12 +221,7 @@ export default function DashboardPage() {
                   className={`aspect-square p-4 shadow-md rounded-sm flex flex-col items-center justify-center text-center transition-transform hover:scale-105 relative group ${msg.style ? JSON.parse(msg.style).color : 'bg-yellow-200'}`}
                   style={{ transform: msg.style ? `rotate(${JSON.parse(msg.style).rotation}deg)` : 'rotate(0deg)' }}
                 >
-                  {/* Popular Badge */}
-                  {msg.totalReactions && msg.totalReactions >= 3 && (
-                    <div className="absolute top-1 left-1 bg-gradient-to-r from-orange-400 to-pink-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-md">
-                      🔥 {msg.totalReactions}
-                    </div>
-                  )}
+               
 
                   {isAdmin && (
                     <button 
