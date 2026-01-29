@@ -109,6 +109,8 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     return NextResponse.json({ error: 'Error sending message' }, { status: 500 })
   }
+}
+
 export async function DELETE(request: NextRequest) {
   const session = await getSession()
   if (!session || !session.user.isAdmin) {
