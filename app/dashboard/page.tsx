@@ -218,22 +218,70 @@ export default function DashboardPage() {
               {messages.map((msg) => (
                 <div 
                   key={msg.id}
-                  onClick={() => setSelectedMessage(msg)}
-                  className={`aspect-square p-4 shadow-md rounded-sm flex flex-col items-center justify-center text-center transition-transform hover:scale-105 relative group cursor-pointer ${msg.style ? JSON.parse(msg.style).color : 'bg-yellow-200'}`}
+                  className={`aspect-square p-4 shadow-md rounded-sm flex flex-col items-center justify-center text-center transition-transform hover:scale-105 relative group ${msg.style ? JSON.parse(msg.style).color : 'bg-yellow-200'}`}
                   style={{ transform: msg.style ? `rotate(${JSON.parse(msg.style).rotation}deg)` : 'rotate(0deg)' }}
                 >
+                  {/* Popular Badge */}
+                  {msg.totalReactions && msg.totalReactions >= 3 && (
+                    <div className="absolute top-1 left-1 bg-gradient-to-r from-orange-400 to-pink-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-md">
+                      🔥 {msg.totalReactions}
+                    </div>
+                  )}
+
                   {isAdmin && (
                     <button 
                       onClick={(e) => { e.stopPropagation(); deleteMessage(msg.id); }}
-                      className="absolute top-2 right-2 p-1.5 bg-white/50 hover:bg-red-500 hover:text-white rounded-full text-gray-500 opacity-0 group-hover:opacity-100 transition-all custom-delete-btn"
+                      className="absolute top-2 right-2 p-1.5 bg-white/50 hover:bg-red-500 hover:text-white rounded-full text-gray-500 opacity-0 group-hover:opacity-100 transition-all custom-delete-btn z-10"
                       title="Borrar mensaje"
                     >
                       <Trash2 size={14} />
                     </button>
                   )}
-                  <p className="font-handwriting text-lg leading-tight mb-2 text-gray-900 line-clamp-6 overflow-hidden text-ellipsis">{msg.content}</p>
-                  <div className="mt-auto text-xs opacity-70 text-gray-800">
-                    Para: {msg.toName || 'Todos'}
+                  
+                  <div 
+                    onClick={() => setSelectedMessage(msg)}
+                    className="flex-1 flex flex-col items-center justify-center cursor-pointer w-full"
+                  >
+                    <p className="font-handwriting text-lg leading-tight mb-2 text-gray-900 line-clamp-6 overflow-hidden text-ellipsis">{msg.content}</p>
+                    <div className="mt-auto text-xs opacity-70 text-gray-800">
+                      Para: {msg.toName || 'Todos'}
+                    </div>
+                  </div>
+
+                  {/* Reaction Section */}
+                  <div className="w-full mt-2 pt-2 border-t border-black/10">
+                    {/* Show existing reactions */}
+                    {msg.reactions && msg.reactions.length > 0 && (
+                      <div className="flex flex-wrap gap-1 justify-center mb-1">
+                        {msg.reactions.map((reaction, idx) => (
+                          <button
+                            key={idx}
+                            onClick={(e) => { e.stopPropagation(); handleReaction(msg.id, reaction.emoji); }}
+                            className={`text-xs px-1.5 py-0.5 rounded-full transition-all ${
+                              reaction.userReacted 
+                                ? 'bg-pink-200 ring-2 ring-pink-400 scale-110' 
+                                : 'bg-white/50 hover:bg-white/80'
+                            }`}
+                          >
+                            {reaction.emoji} {reaction.count}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    
+                    {/* Emoji picker on hover */}
+                    <div className="flex gap-1 justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      {['❤️', '😂', '👏', '🔥', '😍', '🎉'].map((emoji) => (
+                        <button
+                          key={emoji}
+                          onClick={(e) => { e.stopPropagation(); handleReaction(msg.id, emoji); }}
+                          className="text-sm hover:scale-125 transition-transform bg-white/70 rounded-full w-6 h-6 flex items-center justify-center hover:bg-white"
+                          title={`Reaccionar con ${emoji}`}
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
               ))}
