@@ -23,6 +23,7 @@ interface Message {
 interface User {
   id: string
   username: string
+  department: string | null
 }
 
 export default function DashboardPage() {
@@ -438,7 +439,9 @@ function ComposeModal({ onClose, onSent }: { onClose: () => void, onSent: () => 
                 >
                   <option value="">Selecciona un compañero...</option>
                   {users.map(u => (
-                    <option key={u.id} value={u.username}>{u.username}</option>
+                    <option key={u.id} value={u.username}>
+                      {u.username}{u.department ? ` (${u.department})` : ''}
+                    </option>
                   ))}
                 </select>
                 <ChevronDown className="absolute right-3 top-3 text-gray-400 pointer-events-none" size={16} />
