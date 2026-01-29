@@ -5,17 +5,23 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Plus, LogOut, Send, X, Users, Lock, ChevronDown, Eye, EyeOff, Trash2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
+interface Reaction {
+  emoji: string
+  count: number
+  userReacted: boolean
+}
+
 interface Message {
   id: string
   content: string
   toName: string | null
   fromId: string | null
-  // fromUser might be nested if we didn't flatten it, but let's assume API verification.
-  // actually the API returns the object with included relations.
   fromUser?: { username: string }
   style: string | null
   isPublic: boolean
   createdAt: string
+  reactions?: Reaction[]
+  totalReactions?: number
 }
 
 
@@ -34,6 +40,7 @@ export default function DashboardPage() {
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null)
   const [areMessagesRevealed, setAreMessagesRevealed] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
+  const [sortBy, setSortBy] = useState<'recent' | 'popular'>('recent')
   
   const router = useRouter()
 
@@ -55,7 +62,8 @@ export default function DashboardPage() {
   const fetchMessages = async () => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/messages?type=${activeTab}`)
+      const sortParam = activeTab === 'wall' ? `&sort=${sortBy}` : ''
+      const res = await fetch(`/api/messages?type=${activeTab}${sortParam}`)
       if (res.ok) {
         const data = await res.json()
         setMessages(data)
@@ -77,6 +85,20 @@ export default function DashboardPage() {
         body: JSON.stringify({ reveal: newState })
       })
       setAreMessagesRevealed(newState)
+    } catch (error) {
+      console.error(error)
+    }
+  }
+
+  // Handle Reaction
+  const handleReaction = async (messageId: string, emoji: string) => {
+    try {
+      await fetch('/api/reactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messageId, emoji })
+      })
+      fetchMessages() // Refresh to get updated reactions
     } catch (error) {
       console.error(error)
     }
@@ -105,7 +127,7 @@ export default function DashboardPage() {
     }, 5000)
     
     return () => clearInterval(interval)
-  }, [activeTab])
+  }, [activeTab, sortBy])
 
   return (
     <div className="min-h-screen bg-stone-100 flex flex-col font-sans text-gray-900">
@@ -116,26 +138,45 @@ export default function DashboardPage() {
           <h1 className="font-bold text-gray-800 hidden sm:block font-handwriting text-xl">Buzón del Amor (v3.0)</h1>
         </div>
         
-        <div className="flex bg-gray-100 p-1 rounded-full items-center">
-          <button 
-            onClick={() => setActiveTab('wall')}
-            className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'wall' ? 'bg-white shadow-sm text-pink-600' : 'text-gray-500'}`}
-          >
-            <Users size={16} /> Muro
-          </button>
-          <button 
-            onClick={() => setActiveTab('inbox')}
-            className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'inbox' ? 'bg-white shadow-sm text-pink-600' : 'text-gray-500'}`}
-          >
-            <Lock size={16} /> Buzón
-          </button>
-          {isAdmin && (
+        <div className="flex items-center gap-3">
+          <div className="flex bg-gray-100 p-1 rounded-full items-center">
             <button 
-              onClick={() => setActiveTab('admin' as any)}
-              className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'admin' as any ? 'bg-white shadow-sm text-pink-600' : 'text-gray-500'}`}
+              onClick={() => setActiveTab('wall')}
+              className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'wall' ? 'bg-white shadow-sm text-pink-600' : 'text-gray-500'}`}
             >
-              <Eye size={16} /> Admin
+              <Users size={16} /> Muro
             </button>
+            <button 
+              onClick={() => setActiveTab('inbox')}
+              className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'inbox' ? 'bg-white shadow-sm text-pink-600' : 'text-gray-500'}`}
+            >
+              <Lock size={16} /> Buzón
+            </button>
+            {isAdmin && (
+              <button 
+                onClick={() => setActiveTab('admin' as any)}
+                className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'admin' as any ? 'bg-white shadow-sm text-pink-600' : 'text-gray-500'}`}
+              >
+                <Eye size={16} /> Admin
+              </button>
+            )}
+          </div>
+          
+          {activeTab === 'wall' && (
+            <div className="flex bg-gray-100 p-1 rounded-full items-center">
+              <button 
+                onClick={() => setSortBy('recent')}
+                className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${sortBy === 'recent' ? 'bg-white shadow-sm text-gray-800' : 'text-gray-500'}`}
+              >
+                Recientes
+              </button>
+              <button 
+                onClick={() => setSortBy('popular')}
+                className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${sortBy === 'popular' ? 'bg-white shadow-sm text-gray-800' : 'text-gray-500'}`}
+              >
+                🔥 Populares
+              </button>
+            </div>
           )}
         </div>
 

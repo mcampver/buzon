@@ -7,24 +7,71 @@ export async function GET(request: NextRequest) {
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { searchParams } = new URL(request.url)
-  const type = searchParams.get('type') // 'public' | 'inbox'
+  const type = searchParams.get('type') // 'public' | 'inbox' | 'admin'
+  const sort = searchParams.get('sort') // 'recent' | 'popular'
 
   try {
     if (type === 'public' || type === 'wall') {
       const messages = await db.message.findMany({
         where: { isPublic: true },
-        orderBy: { createdAt: 'desc' },
         select: {
           id: true,
           content: true,
           toName: true,
           style: true,
           createdAt: true,
-          isPublic: true
-          // Exclude fromId, toId, toUser
+          isPublic: true,
+          reactions: {
+            select: {
+              emoji: true,
+              userId: true
+            }
+          }
         }
       })
-      return NextResponse.json(messages)
+
+      // Process reactions and calculate counts
+      const messagesWithReactions = messages.map(msg => {
+        const reactionCounts: { [emoji: string]: { count: number; userReacted: boolean } } = {}
+        
+        msg.reactions.forEach(r => {
+          if (!reactionCounts[r.emoji]) {
+            reactionCounts[r.emoji] = { count: 0, userReacted: false }
+          }
+          reactionCounts[r.emoji].count++
+          if (r.userId === session.user.id) {
+            reactionCounts[r.emoji].userReacted = true
+          }
+        })
+
+        const totalReactions = msg.reactions.length
+
+        return {
+          id: msg.id,
+          content: msg.content,
+          toName: msg.toName,
+          style: msg.style,
+          createdAt: msg.createdAt,
+          isPublic: msg.isPublic,
+          reactions: Object.entries(reactionCounts).map(([emoji, data]) => ({
+            emoji,
+            count: data.count,
+            userReacted: data.userReacted
+          })),
+          totalReactions
+        }
+      })
+
+      // Sort messages
+      if (sort === 'popular') {
+        messagesWithReactions.sort((a, b) => b.totalReactions - a.totalReactions)
+      } else {
+        messagesWithReactions.sort((a, b) => 
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        )
+      }
+
+      return NextResponse.json(messagesWithReactions)
     } 
     
     if (type === 'inbox') {
@@ -89,10 +136,24 @@ export async function POST(request: NextRequest) {
 
   if (!content) return NextResponse.json({ error: 'Ah, vacío no vale!' }, { status: 400 })
 
+  // Security validation: public messages cannot have a specific recipient
+  if (isPublic && toName) {
+    return NextResponse.json({ 
+      error: 'Los mensajes públicos no pueden tener un destinatario específico' 
+    }, { status: 400 })
+  }
+
+  // Private messages must have a recipient
+  if (!isPublic && !toName) {
+    return NextResponse.json({ 
+      error: 'Los mensajes privados deben tener un destinatario' 
+    }, { status: 400 })
+  }
+
   try {
     // Try to find if 'toName' matches a registered user
     let toId = null
-    if (toName) {
+    if (toName && !isPublic) {
       const recipient = await db.user.findUnique({ where: { username: toName } })
       if (recipient) toId = recipient.id
     }
@@ -101,7 +162,7 @@ export async function POST(request: NextRequest) {
       data: {
         content,
         fromId: session.user.id,
-        toName: toName || 'Todos',
+        toName: isPublic ? null : toName, // Force null for public messages
         toId,
         isPublic: isPublic || false,
         style: JSON.stringify(style),

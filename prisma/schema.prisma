@@ -19,6 +19,7 @@ model User {
   // Relations
   receivedMessages Message[] @relation("ReceivedMessages")
   sentMessages     Message[] @relation("SentMessages")
+  reactions        Reaction[]
 }
 
 model Message {
@@ -40,6 +41,22 @@ model Message {
   style     String?  // JSON string for color, rotation, sticker type
   
   createdAt DateTime @default(now())
+  
+  // Relations
+  reactions Reaction[]
+}
+
+model Reaction {
+  id        String   @id @default(cuid())
+  emoji     String   // The emoji selected
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messageId String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  
+  @@unique([userId, messageId, emoji])
+  @@index([messageId])
 }
 
 model SystemConfig {
