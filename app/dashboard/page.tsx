@@ -443,13 +443,6 @@ function ComposeModal({ onClose, onSent }: { onClose: () => void, onSent: () => 
     e.preventDefault()
     setLoading(true)
 
-    // Randomize style
-    const colors = ['bg-yellow-200', 'bg-pink-200', 'bg-blue-200', 'bg-green-200', 'bg-purple-200', 'bg-orange-200']
-    const randomColor = colors[Math.floor(Math.random() * colors.length)]
-    const randomRotation = Math.floor(Math.random() * 10) - 5 // -5 to 5 deg
-
-    const style = { color: randomColor, rotation: randomRotation }
-
     try {
       const res = await fetch('/api/messages', {
         method: 'POST',
@@ -457,8 +450,8 @@ function ComposeModal({ onClose, onSent }: { onClose: () => void, onSent: () => 
         body: JSON.stringify({
           content,
           toName: isPublic ? null : toName,
-          isPublic,
-          style
+          isPublic
+          // Style is now generated server-side
         })
       })
 
