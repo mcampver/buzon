@@ -17,9 +17,20 @@ export async function GET() {
     })
   }
 
+  // Get user onboarding status
+  let hasSeenOnboarding = false
+  if (session) {
+    const user = await db.user.findUnique({
+      where: { id: session.user.id },
+      select: { hasSeenOnboarding: true }
+    })
+    hasSeenOnboarding = user?.hasSeenOnboarding ?? false
+  }
+
   return NextResponse.json({ 
     areMessagesRevealed: config.areMessagesRevealed,
-    isAdmin
+    isAdmin,
+    hasSeenOnboarding
   })
 }
 

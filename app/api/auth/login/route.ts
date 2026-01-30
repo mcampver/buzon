@@ -53,7 +53,14 @@ export async function POST(request: NextRequest) {
     const cookieStore = await cookies()
     cookieStore.set('session', session, { expires, httpOnly: true })
 
-    return NextResponse.json({ success: true, user: { id: user.id, username: user.username } })
+    return NextResponse.json({ 
+      success: true, 
+      user: { 
+        id: user.id, 
+        username: user.username,
+        hasSeenOnboarding: user.hasSeenOnboarding 
+      } 
+    })
 
   } catch (error) {
     console.error('Login error:', error)
