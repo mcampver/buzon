@@ -20,6 +20,7 @@ model User {
   receivedMessages Message[] @relation("ReceivedMessages")
   sentMessages     Message[] @relation("SentMessages")
   reactions        Reaction[]
+  comments         Comment[]
 }
 
 model Message {
@@ -44,6 +45,7 @@ model Message {
   
   // Relations
   reactions Reaction[]
+  comments  Comment[]
 }
 
 model Reaction {
@@ -56,6 +58,21 @@ model Reaction {
   createdAt DateTime @default(now())
   
   @@unique([userId, messageId, emoji])
+  @@index([messageId])
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  content   String
+  isAnonymous Boolean @default(false)
+  createdAt DateTime @default(now())
+  
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  messageId String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  
   @@index([messageId])
 }
 

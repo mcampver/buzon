@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Plus, LogOut, Send, X, Users, Lock, ChevronDown, Eye, EyeOff, Trash2 } from 'lucide-react'
+import { Plus, LogOut, Send, X, Users, Lock, ChevronDown, Eye, EyeOff, Trash2, Sparkles, Trophy, User, Check } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
 interface Reaction {
@@ -22,6 +22,7 @@ interface Message {
   createdAt: string
   reactions?: Reaction[]
   totalReactions?: number
+  commentsCount?: number
 }
 
 
@@ -33,7 +34,7 @@ interface User {
 }
 
 export default function DashboardPage() {
-  const [activeTab, setActiveTab] = useState<'wall' | 'inbox'>('wall')
+  const [activeTab, setActiveTab] = useState<'wall' | 'inbox' | 'admin' | 'profile' | 'fame'>('wall')
   const [messages, setMessages] = useState<Message[]>([])
   const [loading, setLoading] = useState(true)
   const [isComposeOpen, setIsComposeOpen] = useState(false)
@@ -41,7 +42,18 @@ export default function DashboardPage() {
   const [areMessagesRevealed, setAreMessagesRevealed] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
   const [sortBy, setSortBy] = useState<'recent' | 'popular'>('recent')
+  const [stats, setStats] = useState<any>(null)
+  const [profile, setProfile] = useState<any>(null)
   
+  
+  // Pagination State
+  const [hasMore, setHasMore] = useState(true)
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
+  const sentinelRef = useRef<HTMLDivElement>(null)
+  
+  // Use a ref for page to ensure immediate updates during rapid scrolls and avoid closure staleness
+  const pageRef = useRef(0) 
+
   const router = useRouter()
 
   // Fetch Config (Reveal Status & Admin Check)
@@ -58,22 +70,73 @@ export default function DashboardPage() {
     }
   }
 
-  // Fetch messsages
-  const fetchMessages = async () => {
-    setLoading(true)
+  const isFetchingRef = useRef(false) // Lock to prevent duplicate requests
+
+  // Fetch Messages
+  const fetchMessages = useCallback(async (isLoadMore = false) => {
+    if (isFetchingRef.current) return
+    
+    // Safety check: if loading more but no more data, stop
+    if (isLoadMore && !hasMore) return
+
+    isFetchingRef.current = true
+
     try {
-      const sortParam = activeTab === 'wall' ? `&sort=${sortBy}` : ''
-      const res = await fetch(`/api/messages?type=${activeTab}${sortParam}`)
+      if (isLoadMore) {
+        setIsLoadingMore(true)
+      } else {
+        setLoading(true)
+        // Reset page on full refresh
+        pageRef.current = 0
+      }
+      
+      let url = `/api/messages?type=${activeTab}&sort=${sortBy}`
+      
+      // Pagination for wall
+      if (activeTab === 'wall') {
+        const limit = 20
+        const skip = pageRef.current * limit
+        url += `&skip=${skip}&limit=${limit}`
+      }
+
+      const res = await fetch(url)
       if (res.ok) {
         const data = await res.json()
-        setMessages(data)
+        
+        if (activeTab === 'wall') {
+           // Handle paginated response
+           if (isLoadMore) {
+             setMessages(prev => {
+               // Deduplicate messages by ID
+               const existingIds = new Set(prev.map(m => m.id))
+               const newUniqueMessages = data.items.filter((m: any) => !existingIds.has(m.id))
+               
+               // Only increment page if we successfully fetched details, 
+               // but honestly we should increment regardless to advance the cursor on the DB side
+               return [...prev, ...newUniqueMessages]
+             })
+             pageRef.current += 1
+           } else {
+             setMessages(data.items)
+             pageRef.current = 1 // Next page will be 1
+           }
+           setHasMore(data.hasMore)
+        } else {
+          // Standard array response for other tabs
+          setMessages(data)
+        }
       }
     } catch (error) {
       console.error(error)
     } finally {
       setLoading(false)
+      setIsLoadingMore(false)
+      // Small timeout to prevent immediate re-triggering if observer is still intersecting
+      setTimeout(() => {
+        isFetchingRef.current = false
+      }, 500)
     }
-  }
+  }, [activeTab, sortBy, hasMore])
 
   // Toggle Reveal (Admin Only)
   const toggleReveal = async () => {
@@ -117,16 +180,77 @@ export default function DashboardPage() {
     }
   }
 
+  // Fetch Stats (Admin Only)
+  const fetchStats = async () => {
+    if (!isAdmin) return
+    try {
+      const res = await fetch('/api/stats')
+      if (res.ok) {
+        const data = await res.json()
+        setStats(data)
+      }
+    } catch (error) {
+      console.error(error)
+    }
+  }
+
+  // Infinite Scroll Observer
   useEffect(() => {
-    fetchConfig()
-    fetchMessages()
+    // Don't observe if no more items, not on wall, or currently initial loading
+    if (!hasMore || activeTab !== 'wall' || loading) return
+
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting) {
+        fetchMessages(true)
+      }
+    }, { rootMargin: '100px' })
+
+    if (sentinelRef.current) {
+      observer.observe(sentinelRef.current)
+    }
+
+    return () => observer.disconnect()
+  }, [hasMore, activeTab, loading, fetchMessages]) 
+
+  // Fetch Profile
+  const fetchProfile = async () => {
+    try {
+      const res = await fetch('/api/profile')
+      if (res.ok) {
+        const data = await res.json()
+        setProfile(data)
+      }
+    } catch (error) {
+      console.error(error)
+    }
+  }
+
+  useEffect(() => {
+    const init = async () => {
+      await fetchConfig()
+      
+      if (activeTab === 'admin') {
+        fetchStats()
+        fetchMessages()
+      } else if (activeTab === 'profile') {
+        fetchProfile()
+      } else if (activeTab === 'fame' || activeTab === 'wall' || activeTab === 'inbox') {
+        fetchMessages()
+      }
+    }
+    init()
     
-    const interval = setInterval(() => {
-      fetchMessages()
-      fetchConfig() // Check if admin revealed them remotely
-    }, 5000)
+    // Poll messages only for inbox (Wall uses infinite scroll now, so no auto-poll or it jumps)
+    let interval: NodeJS.Timeout | null = null
+    if (activeTab === 'inbox') {
+      interval = setInterval(() => {
+        fetchMessages()
+      }, 5000)
+    }
     
-    return () => clearInterval(interval)
+    return () => {
+      if (interval) clearInterval(interval)
+    }
   }, [activeTab, sortBy])
 
   return (
@@ -139,25 +263,37 @@ export default function DashboardPage() {
         </div>
         
         <div className="flex items-center gap-3">
-          <div className="flex bg-gray-100 p-1 rounded-full items-center">
+          <div className="flex bg-gray-100 p-1 rounded-full items-center overflow-x-auto max-w-[200px] sm:max-w-none scrollbar-hide">
             <button 
               onClick={() => setActiveTab('wall')}
-              className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'wall' ? 'bg-white shadow-sm text-pink-600' : 'text-gray-500'}`}
+              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-medium transition-all flex items-center gap-1.5 whitespace-nowrap ${activeTab === 'wall' ? 'bg-white shadow-sm text-pink-600' : 'text-gray-500 hover:text-gray-700'}`}
             >
-              <Users size={16} /> Muro
+              <Users size={16} /> <span className="hidden sm:inline">Muro</span>
+            </button>
+            <button 
+              onClick={() => setActiveTab('fame')}
+              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-medium transition-all flex items-center gap-1.5 whitespace-nowrap ${activeTab === 'fame' ? 'bg-white shadow-sm text-orange-500' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              <Trophy size={16} /> <span className="hidden sm:inline">Fama</span>
             </button>
             <button 
               onClick={() => setActiveTab('inbox')}
-              className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'inbox' ? 'bg-white shadow-sm text-pink-600' : 'text-gray-500'}`}
+              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-medium transition-all flex items-center gap-1.5 whitespace-nowrap ${activeTab === 'inbox' ? 'bg-white shadow-sm text-pink-600' : 'text-gray-500 hover:text-gray-700'}`}
             >
-              <Lock size={16} /> Buzón
+              <Lock size={16} /> <span className="hidden sm:inline">Buzón</span>
+            </button>
+            <button 
+              onClick={() => setActiveTab('profile')}
+              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-medium transition-all flex items-center gap-1.5 whitespace-nowrap ${activeTab === 'profile' ? 'bg-white shadow-sm text-purple-600' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              <User size={16} /> <span className="hidden sm:inline">Perfil</span>
             </button>
             {isAdmin && (
               <button 
-                onClick={() => setActiveTab('admin' as any)}
-                className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'admin' as any ? 'bg-white shadow-sm text-pink-600' : 'text-gray-500'}`}
+                onClick={() => setActiveTab('admin')}
+                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-medium transition-all flex items-center gap-1.5 whitespace-nowrap ${activeTab === 'admin' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
               >
-                <Eye size={16} /> Admin
+                <Eye size={16} /> <span className="hidden sm:inline">Admin</span>
               </button>
             )}
           </div>
@@ -205,7 +341,7 @@ export default function DashboardPage() {
       </header>
 
       {/* Content */}
-      <main className="flex-1 p-4 overflow-y-auto relative">
+      <main className="flex-1 max-w-6xl mx-auto w-full p-4 relative">
         <AnimatePresence mode="wait">
           {activeTab === 'wall' ? (
             <motion.div 
@@ -238,8 +374,13 @@ export default function DashboardPage() {
                     className="flex-1 flex flex-col items-center justify-center cursor-pointer w-full"
                   >
                     <p className="font-handwriting text-lg leading-tight mb-2 text-gray-900 line-clamp-6 overflow-hidden text-ellipsis">{msg.content}</p>
-                    <div className="mt-auto text-xs opacity-70 text-gray-800">
-                      Para: {msg.toName || 'Todos'}
+                    <div className="mt-auto flex w-full justify-between items-end text-xs opacity-70 text-gray-800">
+                      <div>Para: {msg.toName || 'Todos'}</div>
+                      {msg.commentsCount !== undefined && msg.commentsCount > 0 && (
+                        <div className="flex items-center gap-1 font-bold">
+                          <span>💬</span> {msg.commentsCount}
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -285,6 +426,29 @@ export default function DashboardPage() {
                   ¡El muro está vacío! Sé el primero en publicar algo.
                 </div>
               )}
+               {/* Load More Trigger */}
+               {/* Auto-Load Sentinel */}
+               {/* Auto-Load Sentinel */}
+               {activeTab === 'wall' && hasMore && (
+                 <div 
+                   ref={sentinelRef}
+                   className="col-span-full flex flex-col items-center justify-center py-8 gap-2"
+                 >
+                   {isLoadingMore ? (
+                      <div className="flex items-center gap-2 text-gray-400 bg-white px-4 py-2 rounded-full shadow-sm">
+                        <div className="w-4 h-4 border-2 border-pink-500 border-t-transparent rounded-full animate-spin"></div>
+                        <span className="text-sm font-medium">Cargando amor...</span>
+                      </div>
+                   ) : (
+                     <button 
+                       onClick={() => fetchMessages(true)}
+                       className="px-6 py-2 bg-white text-pink-500 font-bold rounded-full shadow-sm border border-pink-100 hover:bg-pink-50 hover:shadow-md transition-all text-sm flex items-center gap-2"
+                     >
+                       <span>💞</span> Ver más cartas
+                     </button>
+                   )}
+                 </div>
+               )}
             </motion.div>
           ) : activeTab === 'inbox' ? (
              <motion.div 
@@ -331,60 +495,35 @@ export default function DashboardPage() {
                 </div>
               )}
             </motion.div>
-          ) : (
+          ) : activeTab === 'profile' ? (
+            <motion.div 
+              key="profile"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+            >
+              <ProfileView profile={profile} />
+            </motion.div>
+          ) : activeTab === 'fame' ? (
+            <motion.div 
+              key="fame"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+            >
+              <HallOfFameView messages={messages} />
+            </motion.div>
+          ) : activeTab === 'admin' ? (
             <motion.div 
               key="admin"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              className="max-w-4xl mx-auto space-y-4"
             >
-               <h2 className="text-xl font-semibold text-gray-700 mb-4 font-handwriting">Panel Global de Mensajes (Admin)</h2>
-               <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                 <table className="w-full text-sm text-left">
-                   <thead className="bg-gray-50 text-gray-700 font-medium">
-                     <tr>
-                       <th className="p-3">Mensaje</th>
-                       <th className="p-3">De</th>
-                       <th className="p-3">Para</th>
-                       <th className="p-3">Tipo</th>
-                       <th className="p-3 text-right">Fecha</th>
-                       <th className="p-3 text-right">Acción</th>
-                     </tr>
-                   </thead>
-                   <tbody className="divide-y divide-gray-100">
-                     {messages.map(msg => (
-                       <tr key={msg.id} className="hover:bg-gray-50">
-                         <td className="p-3 max-w-[200px] truncate" title={msg.content}>{msg.content}</td>
-                         <td className="p-3 font-medium text-gray-900">{msg.fromUser?.username || 'Anónimo'}</td>
-                         <td className="p-3">{msg.toName || (msg.isPublic ? 'Todos (Muro)' : 'Privado')}</td>
-                         <td className="p-3">
-                           <span className={`px-2 py-0.5 rounded-full text-xs ${msg.isPublic ? 'bg-pink-100 text-pink-700' : 'bg-purple-100 text-purple-700'}`}>
-                             {msg.isPublic ? 'Muro' : 'Buzón'}
-                           </span>
-                         </td>
-                         <td className="p-3 text-right text-gray-500 text-xs">
-                           {new Date(msg.createdAt).toLocaleDateString()} {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                         </td>
-                         <td className="p-3 text-right">
-                            <button 
-                              onClick={() => deleteMessage(msg.id)}
-                              className="text-gray-400 hover:text-red-600 transition-colors p-1"
-                              title="Eliminar mensaje"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                         </td>
-                       </tr>
-                     ))}
-                   </tbody>
-                 </table>
-                 {messages.length === 0 && (
-                   <div className="p-8 text-center text-gray-400">No hay mensajes en la base de datos.</div>
-                 )}
-               </div>
+               <AdminStatsView stats={stats} messages={messages} />
             </motion.div>
-          )}
+          ) : null
+          }
         </AnimatePresence>
       </main>
 
@@ -544,34 +683,429 @@ function ComposeModal({ onClose, onSent }: { onClose: () => void, onSent: () => 
 }
 
 function ViewMessageModal({ message, onClose }: { message: Message, onClose: () => void }) {
+  const [comments, setComments] = useState<any[]>([])
+  const [newComment, setNewComment] = useState('')
+  const [isAnonymous, setIsAnonymous] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [sending, setSending] = useState(false)
+
+  // Fetch comments
+  useEffect(() => {
+    const fetchComments = async () => {
+      setLoading(true)
+      try {
+        const res = await fetch(`/api/comments?messageId=${message.id}`)
+        if (res.ok) {
+           setComments(await res.json())
+        }
+      } catch (err) {
+        console.error(err)
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchComments()
+  }, [message.id])
+
+  const handleSendComment = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newComment.trim()) return
+
+    setSending(true)
+    try {
+      const res = await fetch('/api/comments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          messageId: message.id, 
+          content: newComment,
+          isAnonymous
+        })
+      })
+      
+      if (res.ok) {
+        const savedComment = await res.json()
+        setComments([...comments, savedComment])
+        setNewComment('')
+        setIsAnonymous(false) // Reset
+      }
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setSending(false)
+    }
+  }
+
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm" onClick={onClose}>
       <motion.div 
         initial={{ scale: 0.9, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.9, opacity: 0 }}
-        className={`rounded-xl w-full max-w-lg shadow-2xl p-8 relative overflow-hidden flex flex-col justify-center min-h-[300px] items-center text-center ${message.style ? JSON.parse(message.style).color : 'bg-white'}`}
+        className={`rounded-xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh] bg-white`}
         onClick={(e) => e.stopPropagation()}
       >
-        <button onClick={onClose} className="absolute top-4 right-4 bg-black/10 hover:bg-black/20 p-2 rounded-full transition-colors">
-          <X size={24} className="text-gray-800" />
-        </button>
-        
-        <p className="font-handwriting text-3xl leading-snug text-gray-900 mb-6 w-full break-words whitespace-pre-wrap">
-          {message.content}
-        </p>
-        
-        <div className="mt-auto pt-6 border-t border-black/10 w-full flex justify-between items-end text-sm text-gray-800 font-medium opacity-80">
-          <div className="text-left">
-            <span className="block text-xs uppercase tracking-wider opacity-60">Para</span>
-            {message.toName || 'Todos (Muro)'}
-          </div>
-          <div className="text-right">
-             <span className="block text-xs uppercase tracking-wider opacity-60">Enviado</span>
-             {new Date(message.createdAt).toLocaleDateString()}
+        {/* Header / Message Content */}
+        <div className={`p-8 relative ${message.style ? JSON.parse(message.style).color : 'bg-gray-100'} min-h-[200px] flex flex-col justify-center text-center`}>
+           <button onClick={onClose} className="absolute top-4 right-4 bg-black/10 hover:bg-black/20 p-2 rounded-full transition-colors z-10">
+            <X size={20} className="text-gray-800" />
+          </button>
+          
+          <p className="font-handwriting text-3xl leading-snug text-gray-900 mb-4 break-words whitespace-pre-wrap">
+            {message.content}
+          </p>
+
+          <div className="mt-auto pt-4 border-t border-black/10 w-full flex justify-between items-end text-sm text-gray-800 font-medium opacity-80">
+            <div className="text-left">
+              <span className="block text-xs uppercase tracking-wider opacity-60">Para</span>
+              {message.toName || 'Todos (Muro)'}
+            </div>
+            <div className="text-right">
+               <span className="block text-xs uppercase tracking-wider opacity-60">Enviado</span>
+               {new Date(message.createdAt).toLocaleDateString()}
+            </div>
           </div>
         </div>
+
+        {/* Comments Section */}
+        <div className="flex-1 overflow-y-auto bg-gray-50 flex flex-col">
+           <div className="p-4 space-y-4">
+             <h4 className="font-bold text-gray-700 flex items-center gap-2">
+               💬 Comentarios ({comments.length})
+             </h4>
+
+             {loading ? (
+               <div className="text-center py-8 text-gray-400">Cargando chismes...</div>
+             ) : comments.length === 0 ? (
+               <div className="text-center py-8 text-gray-400 italic">Nadie ha dicho nada aún. ¡Sé el primero!</div>
+             ) : (
+               <div className="space-y-3">
+                 {comments.map((comment) => (
+                   <div key={comment.id} className="bg-white p-3 rounded-lg shadow-sm border border-gray-100">
+                     <div className="flex justify-between items-start mb-1">
+                       <span className="font-bold text-sm text-pink-600">
+                         {comment.user.username} 
+                         {comment.user.department && <span className="text-gray-400 font-normal text-xs ml-1">({comment.user.department})</span>}
+                       </span>
+                       <span className="text-xs text-gray-400">{new Date(comment.createdAt).toLocaleDateString()}</span>
+                     </div>
+                     <p className="text-gray-700 text-sm whitespace-pre-wrap">{comment.content}</p>
+                   </div>
+                 ))}
+               </div>
+             )}
+           </div>
+        </div>
+
+        {/* Add Comment Input */}
+        <form onSubmit={handleSendComment} className="p-4 bg-white border-t border-gray-200">
+           <div className="flex items-center gap-2 mb-2">
+             <label className="flex items-center gap-2 text-xs text-gray-500 cursor-pointer hover:text-pink-600 transition-colors">
+               <div className={`w-4 h-4 border rounded flex items-center justify-center transition-colors ${isAnonymous ? 'bg-pink-500 border-pink-500 text-white' : 'border-gray-300 bg-white'}`}>
+                 {isAnonymous && <Check size={10} strokeWidth={4} />}
+               </div>
+               <input 
+                  type="checkbox" 
+                  checked={isAnonymous} 
+                  onChange={(e) => setIsAnonymous(e.target.checked)} 
+                  className="hidden" 
+                />
+               <span>Comentar como Anónimo 👻</span>
+             </label>
+           </div>
+          <div className="flex gap-2">
+            <input 
+              type="text" 
+              value={newComment}
+              onChange={(e) => setNewComment(e.target.value)}
+              placeholder={isAnonymous ? "Escribe un comentario anónimo..." : "Escribe un comentario..."}
+              className="flex-1 border border-gray-300 rounded-full px-4 py-2 focus:ring-2 focus:ring-pink-500 focus:border-transparent outline-none text-sm"
+              disabled={sending}
+            />
+            <button 
+              type="submit" 
+              disabled={sending || !newComment.trim()}
+              className="bg-pink-600 text-white p-2 rounded-full hover:bg-pink-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Send size={18} />
+            </button>
+          </div>
+        </form>
       </motion.div>
+    </div>
+  )
+}
+
+function AdminStatsView({ stats, messages }: { stats: any, messages: any[] }) {
+  if (!stats) return <div className="p-8 text-center text-gray-500 animate-pulse">Cargando estadísticas...</div>
+
+  return (
+    <div className="max-w-6xl mx-auto p-4 space-y-8 animate-in fade-in duration-500">
+      {/* Overview Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-gradient-to-br from-pink-50 to-pink-100 p-6 rounded-2xl shadow-sm border border-pink-100">
+          <div className="text-3xl mb-2">📬</div>
+          <div className="text-3xl font-bold text-pink-600">{stats.overview.totalMessages}</div>
+          <div className="text-sm text-gray-600">Total Mensajes</div>
+        </div>
+        <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-6 rounded-2xl shadow-sm border border-blue-100">
+          <div className="text-3xl mb-2">👥</div>
+          <div className="text-3xl font-bold text-blue-600">{stats.overview.totalUsers}</div>
+          <div className="text-sm text-gray-600">Usuarios Activos</div>
+        </div>
+        <div className="bg-gradient-to-br from-red-50 to-red-100 p-6 rounded-2xl shadow-sm border border-red-100">
+          <div className="text-3xl mb-2">❤️</div>
+          <div className="text-3xl font-bold text-red-600">{stats.overview.totalReactions}</div>
+          <div className="text-sm text-gray-600">Total Reacciones</div>
+        </div>
+        <div className="bg-gradient-to-br from-purple-50 to-purple-100 p-6 rounded-2xl shadow-sm border border-purple-100">
+          <div className="text-3xl mb-2">📊</div>
+          <div className="text-3xl font-bold text-purple-600">{stats.overview.avgMessagesPerUser}</div>
+          <div className="text-sm text-gray-600">Promedio/Usuario</div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {/* Top Romantics */}
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-stone-200">
+          <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+            🏆 Top 5 Románticos
+          </h3>
+          <div className="space-y-3">
+            {stats.rankings.topSenders.map((user: any, i: number) => (
+              <div key={user.username} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+                <div className="flex items-center gap-3">
+                  <div className={`w-8 h-8 flex items-center justify-center rounded-full font-bold ${i === 0 ? 'bg-yellow-100 text-yellow-600' : 'bg-gray-200 text-gray-600'}`}>
+                    {i + 1}
+                  </div>
+                  <span className="font-medium text-gray-700">{user.username}</span>
+                </div>
+                <div className="flex items-center gap-1 text-pink-500 font-bold">
+                  {user.count} 💌
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Fun Stats Grid */}
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-stone-200">
+          <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+            😄 Curiosidades
+          </h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="p-4 bg-orange-50 rounded-xl text-center">
+              <div className="text-sm text-gray-500 mb-1">Emoji Favorito</div>
+              <div className="text-4xl">{stats.funStats.favoriteEmoji}</div>
+            </div>
+            <div className={`p-4 rounded-xl text-center shadow-sm ${stats.funStats.favoriteColor}`}>
+              <div className="text-sm text-gray-800/60 mb-1">Color Favorito</div>
+              <div className="text-xl font-bold text-gray-800/80">Este!</div>
+            </div>
+            <div className="p-4 bg-purple-50 rounded-xl col-span-2">
+              <div className="text-sm text-gray-500 mb-2">✍️ El Más Expresivo</div>
+              <div className="font-bold text-purple-700">{stats.funStats.longestMessage.user}</div>
+              <div className="text-xs text-gray-400">{stats.funStats.longestMessage.length} caracteres</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+       {/* Achievements */}
+       <div className="space-y-4">
+        <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+          🎖️ Logros del Sistema
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+          {stats.achievements.map((badge: any) => (
+            <div key={badge.id} className={`p-4 rounded-xl border flex flex-col items-center text-center transition-all ${badge.unlocked ? 'bg-gradient-to-b from-yellow-50 to-white border-yellow-200 shadow-sm' : 'bg-gray-50 border-gray-200 opacity-60 grayscale'}`}>
+              <div className="text-4xl mb-2 filter drop-shadow-sm">{badge.icon}</div>
+              <div className="font-bold text-gray-800 text-sm mb-1">{badge.title}</div>
+              <div className="text-xs text-gray-500">{badge.description}</div>
+              {badge.unlocked && <div className="mt-2 text-[10px] font-bold text-green-600 bg-green-100 px-2 py-1 rounded-full">DESBLOQUEADO</div>}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Message Log - Inserted */}
+      <div className="bg-white p-6 rounded-2xl shadow-sm border border-stone-200">
+        <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+          📜 Registro de Mensajes
+        </h3>
+        <div className="overflow-x-auto">
+           <table className="w-full text-sm text-left">
+             <thead className="bg-gray-50 text-gray-500 uppercase font-medium">
+               <tr>
+                 <th className="p-3 rounded-tl-lg">Fecha</th>
+                 <th className="p-3">De</th>
+                 <th className="p-3">Para</th>
+                 <th className="p-3">Mensaje</th>
+                 <th className="p-3 rounded-tr-lg">Tipo</th>
+               </tr>
+             </thead>
+             <tbody className="divide-y divide-gray-100">
+               {messages.map((msg: any) => (
+                 <tr key={msg.id} className="hover:bg-gray-50 transition-colors">
+                   <td className="p-3 text-gray-400 whitespace-nowrap">
+                     {new Date(msg.createdAt).toLocaleDateString()} {new Date(msg.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                   </td>
+                   <td className="p-3 font-medium text-purple-600">
+                     {msg.fromUser ? msg.fromUser.username : <span className="text-gray-400 italic">Anónimo</span>}
+                   </td>
+                   <td className="p-3 font-medium text-pink-600">
+                     {msg.toName || <span className="text-gray-400">Todos</span>}
+                   </td>
+                   <td className="p-3 text-gray-700 max-w-xs truncate" title={msg.content}>
+                     {msg.content}
+                   </td>
+                   <td className="p-3">
+                     {msg.isPublic ? (
+                       <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full text-xs font-bold">Público</span>
+                     ) : (
+                       <span className="bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full text-xs font-bold">Privado</span>
+                     )}
+                   </td>
+                 </tr>
+               ))}
+               {messages.length === 0 && (
+                 <tr>
+                   <td colSpan={5} className="p-8 text-center text-gray-400">
+                     No hay mensajes registrados.
+                   </td>
+                 </tr>
+               )}
+             </tbody>
+           </table>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ProfileView({ profile }: { profile: any }) {
+  if (!profile) return <div className="p-8 text-center text-gray-500 animate-pulse">Cargando perfil...</div>
+
+  return (
+    <div className="max-w-4xl mx-auto p-4 space-y-8 animate-in fade-in duration-500">
+      {/* Header */}
+      <div className="bg-white p-6 rounded-2xl shadow-sm border border-stone-200 flex flex-col sm:flex-row items-center gap-6 text-center sm:text-left">
+        <div className="w-24 h-24 bg-gradient-to-br from-pink-200 to-purple-200 rounded-full flex items-center justify-center text-5xl shadow-inner animate-bounce">
+          {profile.level.icon}
+        </div>
+        <div className="flex-1 space-y-2 w-full">
+          <h2 className="text-2xl font-bold text-gray-800">Tu Nivel: <span className="text-pink-600">{profile.level.title}</span></h2>
+          <div className="w-full bg-gray-100 h-4 rounded-full overflow-hidden relative">
+            <div 
+              className="h-full bg-gradient-to-r from-pink-400 to-purple-500 absolute top-0 left-0 transition-all duration-1000 ease-out"
+              style={{ width: `${profile.level.progress}%` }}
+            />
+          </div>
+          <p className="text-sm text-gray-500">
+            {profile.personalStats.messagesSent} mensajes enviados • Sigue enviando para subir de nivel!
+          </p>
+        </div>
+        <div className="text-center bg-orange-50 p-3 rounded-xl border border-orange-100">
+           <div className="text-2xl font-bold text-orange-600">{profile.streak} 🔥</div>
+           <div className="text-xs text-gray-500 font-bold uppercase tracking-wider">Racha Días</div>
+        </div>
+      </div>
+
+      {/* Stats Grid */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-stone-200 text-center hover:scale-105 transition-transform">
+          <div className="text-2xl mb-1">📨</div>
+          <div className="font-bold text-2xl text-gray-800">{profile.personalStats.messagesSent}</div>
+          <div className="text-xs text-gray-500">Enviados</div>
+        </div>
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-stone-200 text-center hover:scale-105 transition-transform">
+          <div className="text-2xl mb-1">💌</div>
+          <div className="font-bold text-2xl text-gray-800">{profile.personalStats.messagesReceived}</div>
+          <div className="text-xs text-gray-500">Recibidos</div>
+        </div>
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-stone-200 text-center hover:scale-105 transition-transform">
+          <div className="text-2xl mb-1">❤️</div>
+          <div className="font-bold text-2xl text-gray-800">{profile.personalStats.reactionsReceived}</div>
+          <div className="text-xs text-gray-500">Reacciones</div>
+        </div>
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-stone-200 text-center hover:scale-105 transition-transform">
+          <div className="text-2xl mb-1">🏆</div>
+          <div className="font-bold text-2xl text-gray-800">{profile.personalStats.mostPopularMessage?.reactions || 0}</div>
+          <div className="text-xs text-gray-500">Max Reacciones</div>
+        </div>
+      </div>
+
+      {/* Badges */}
+      <div>
+        <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+          🏅 Tus Medallas
+        </h3>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {profile.badges.map((badge: any) => (
+             <div key={badge.id} className={`p-4 rounded-xl border flex flex-col items-center text-center transition-all ${badge.unlocked ? 'bg-gradient-to-b from-yellow-50 to-white border-yellow-200 shadow-sm transform hover:scale-105' : 'bg-gray-50 border-gray-200 opacity-50 grayscale'}`}>
+              <div className="text-4xl mb-2 drop-shadow-sm">{badge.icon}</div>
+              <div className="font-bold text-gray-800 text-sm">{badge.title}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function HallOfFameView({ messages }: { messages: Message[] }) {
+  // Messages are already sorted by popularity from API call
+  const topMessages = messages
+    .filter(m => m.totalReactions && m.totalReactions > 0)
+    .slice(0, 10)
+
+  if (topMessages.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-center space-y-4 animate-in zoom-in duration-500">
+        <div className="text-6xl animate-bounce">🏆</div>
+        <h3 className="text-xl font-bold text-gray-800">El Salón de la Fama está vacío</h3>
+        <p className="text-gray-500 max-w-md">
+          Sé el primero en obtener reacciones y aparecer aquí. ¡Envía mensajes creativos y divertidos!
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="max-w-7xl mx-auto p-4 animate-in fade-in duration-500">
+      <div className="text-center mb-10 space-y-2">
+        <h2 className="text-3xl font-bold text-gray-800 font-handwriting transform -rotate-1">🌟 Salón de la Fama 🌟</h2>
+        <p className="text-gray-600">Los mensajes más legendarios de todos los tiempos</p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {topMessages.map((msg, index) => (
+          <div key={msg.id} className="relative group">
+            <div className={`absolute -top-4 -left-4 w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-xl shadow-lg z-10 border-4 border-white ${index === 0 ? 'bg-yellow-400 scale-110' : index === 1 ? 'bg-gray-400' : index === 2 ? 'bg-orange-400' : 'bg-pink-400'}`}>
+              #{index + 1}
+            </div>
+            {index === 0 && <div className="absolute -top-8 left-0 right-0 text-center text-2xl animate-bounce">👑</div>}
+            
+            <div 
+              className={`aspect-video md:aspect-square p-6 shadow-lg rounded-2xl flex flex-col items-center justify-center text-center transition-transform hover:scale-[1.02] relative ${msg.style ? JSON.parse(msg.style).color : 'bg-yellow-200'}`}
+              style={{ transform: msg.style ? `rotate(${JSON.parse(msg.style).rotation}deg)` : 'rotate(0deg)' }}
+            >
+               <div className="font-handwriting text-2xl text-gray-800 mb-4 line-clamp-6">
+                "{msg.content}"
+              </div>
+              <div className="mt-auto flex items-center gap-2 bg-white/40 px-3 py-1.5 rounded-full backdrop-blur-sm shadow-sm">
+                <span>🔥</span>
+                <span className="font-bold text-gray-800">{msg.totalReactions} reacciones</span>
+              </div>
+              {msg.toName && (
+                <div className="absolute bottom-2 right-2 text-xs opacity-60 font-medium">
+                  Para: {msg.toName}
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

@@ -15,24 +15,28 @@ export async function GET(request: NextRequest) {
   const sort = searchParams.get('sort') // 'recent' | 'popular'
 
   try {
-    if (type === 'public' || type === 'wall') {
+
+    if (type === 'wall' || type === 'public') {
+      const limit = parseInt(searchParams.get('limit') || '20')
+      const skip = parseInt(searchParams.get('skip') || '0')
+
       const messages = await db.message.findMany({
+        take: limit,
         where: { isPublic: true },
-        select: {
-          id: true,
-          content: true,
-          toName: true,
-          style: true,
-          createdAt: true,
-          isPublic: true,
-          reactions: {
-            select: {
-              emoji: true,
-              userId: true
-            }
+        skip: skip,
+        orderBy: { createdAt: 'desc' },
+        include: { 
+          reactions: true,
+          _count: {
+            select: { comments: true }
           }
         }
       })
+
+      // Calculate if there are more (if we received full limit batch)
+      // Note: This is a simple heuristic. Ideally we'd fetch limit+1 or count, 
+      // but client can stop requesting if received < limit.
+      const hasMore = messages.length === limit
 
       // Process reactions and calculate counts
       const messagesWithReactions = messages.map(msg => {
@@ -62,20 +66,15 @@ export async function GET(request: NextRequest) {
             count: data.count,
             userReacted: data.userReacted
           })),
-          totalReactions
+          totalReactions,
+          commentsCount: (msg as any)._count?.comments || 0
         }
       })
 
-      // Sort messages
-      if (sort === 'popular') {
-        messagesWithReactions.sort((a, b) => b.totalReactions - a.totalReactions)
-      } else {
-        messagesWithReactions.sort((a, b) => 
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        )
-      }
-
-      return NextResponse.json(messagesWithReactions)
+      return NextResponse.json({
+        items: messagesWithReactions,
+        hasMore
+      })
     } 
     
     if (type === 'inbox') {
@@ -122,6 +121,27 @@ export async function GET(request: NextRequest) {
         }
       })
       return NextResponse.json(messages)
+    }
+
+
+    if (type === 'fame') {
+      const messages = await db.message.findMany({
+        where: { isPublic: true },
+        // @ts-ignore: Prisma client type issue
+        orderBy: { reactions: { _count: 'desc' } },
+        take: 10,
+        include: {
+          _count: {
+            select: { reactions: true }
+          }
+        }
+      })
+
+      return NextResponse.json(messages.map((m: any) => ({
+        ...m,
+        totalReactions: m._count.reactions,
+        style: m.style 
+      })))
     }
 
     return NextResponse.json({ error: 'Invalid type' }, { status: 400 })

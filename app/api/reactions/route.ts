@@ -26,6 +26,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing messageId or emoji' }, { status: 400 })
     }
 
+    // Security: Validate emoji length to prevent spam/injection
+    if (typeof emoji !== 'string' || emoji.length > 8) { // 8 chars covers complex emojis
+      return NextResponse.json({ error: 'Invalid emoji' }, { status: 400 })
+    }
+
     // Check if reaction already exists
     const existingReaction = await db.reaction.findUnique({
       where: {
