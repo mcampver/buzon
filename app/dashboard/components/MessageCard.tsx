@@ -138,7 +138,7 @@ export default function MessageCard({ msg, isAdmin, onDelete, onReaction, onView
 
         {/* Footer info (Para: ...) */}
         <div className={`mt-1 w-full flex justify-between items-end text-xs opacity-70 ${style.theme === 'cyberpunk' ? 'text-green-400' : 'text-gray-800'} shrink-0`}>
-           <div className="truncate max-w-full font-medium">Para: {msg.toName || 'Todos'}</div>
+           <div className="truncate max-w-full font-medium"></div>
            {msg.commentsCount !== undefined && msg.commentsCount > 0 && (
              <div className="flex items-center gap-1 font-bold">
                <span>💬</span> {msg.commentsCount}
