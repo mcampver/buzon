@@ -166,6 +166,20 @@ export default function MessageCard({ msg, isAdmin, onDelete, onReaction, onView
           </div>
         )}
       </div>
+
+      {/* Emoji picker on hover */}
+      <div className="flex gap-1 justify-center opacity-0 group-hover:opacity-100 transition-opacity absolute bottom-1 left-0 right-0 z-50 pointer-events-none group-hover:pointer-events-auto">
+        {['❤️', '😂', '👏', '🔥', '😍', '🎉'].map((emoji) => (
+          <button
+            key={emoji}
+            onClick={(e) => { e.stopPropagation(); onReaction(msg.id, emoji); }}
+            className="text-sm hover:scale-125 transition-transform bg-white/90 shadow-sm rounded-full w-6 h-6 flex items-center justify-center hover:bg-white"
+            title={`Reaccionar con ${emoji}`}
+          >
+            {emoji}
+          </button>
+        ))}
+      </div>
     </div>
   )
 }
