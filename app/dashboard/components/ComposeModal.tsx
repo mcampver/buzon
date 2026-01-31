@@ -233,7 +233,7 @@ export default function ComposeModal({ onClose, onSent }: ComposeModalProps) {
                     <select 
                       value={toName}
                       onChange={(e) => setToName(e.target.value)}
-                      className="w-full p-2 text-sm border border-pink-200 rounded-lg appearance-none bg-white focus:ring-2 focus:ring-pink-500 focus:outline-none"
+                      className="w-full p-2 text-sm border border-pink-200 rounded-lg appearance-none bg-white text-gray-900 focus:ring-2 focus:ring-pink-500 focus:outline-none"
                       required={!isPublic}
                     >
                       <option value="">Seleccionar...</option>
