@@ -42,6 +42,10 @@ model Message {
   // Visuals
   style     String?  // JSON string for color, rotation, sticker type
   
+  // Multimedia
+  spotifyUrl String?
+  gifUrl     String?
+  
   createdAt DateTime @default(now())
   
   // Relations
